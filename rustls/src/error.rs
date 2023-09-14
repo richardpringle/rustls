@@ -151,6 +151,15 @@ impl From<InvalidMessage> for Error {
     }
 }
 
+impl From<InvalidMessage> for AlertDescription {
+    fn from(e: InvalidMessage) -> Self {
+        match e {
+            InvalidMessage::PreSharedKeyIsNotFinalExtension => Self::IllegalParameter,
+            _ => Self::DecodeError,
+        }
+    }
+}
+
 #[non_exhaustive]
 #[allow(missing_docs)]
 #[derive(Debug, PartialEq, Clone)]

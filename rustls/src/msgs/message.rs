@@ -315,7 +315,7 @@ impl Message {
 /// A [`PlainMessage`] must contain plaintext content. Encrypted content should be stored in an
 /// [`OpaqueMessage`] and decrypted before being stored into a [`PlainMessage`].
 impl TryFrom<PlainMessage> for Message {
-    type Error = Error;
+    type Error = InvalidMessage;
 
     fn try_from(plain: PlainMessage) -> Result<Self, Self::Error> {
         Ok(Self {
