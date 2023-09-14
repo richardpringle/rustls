@@ -210,6 +210,48 @@ impl TlsListElement for SignatureScheme {
     const SIZE_LEN: ListLength = ListLength::U16;
 }
 
+/// Simplified encoding/decoding for a `ServerName` extension payload to/from `DnsName`
+///
+/// This is possible because:
+///
+/// - the spec (RFC6066) disallows multiple names for a given name type
+/// - name types other than ServerNameType::HostName are not defined, and so tend not
+///   to be used (and can be discarded during decoding)
+impl Codec for DnsName {
+    fn encode(&self, bytes: &mut Vec<u8>) {
+        let server_name_list = LengthPrefixedBuffer::new(ListLength::U16, bytes);
+        ServerNameType::HostName.encode(server_name_list.buf);
+        let name_slice = self.as_ref().as_bytes();
+        (name_slice.len() as u16).encode(server_name_list.buf);
+        server_name_list
+            .buf
+            .extend_from_slice(name_slice);
+    }
+
+    fn read(r: &mut Reader) -> Result<Self, InvalidMessage> {
+        let names = Vec::<ServerName>::read(r)?;
+
+        let mut found_dns_name = None;
+
+        for n in names {
+            match n.payload {
+                ServerNamePayload::HostName(dns_name) => {
+                    if found_dns_name.is_some() {
+                        warn!("Illegal SNI extension: duplicate host_name received");
+                        return Err(InvalidMessage::InvalidServerName);
+                    }
+
+                    found_dns_name = Some(dns_name);
+                }
+
+                ServerNamePayload::Unknown(_) => {}
+            }
+        }
+
+        found_dns_name.ok_or(InvalidMessage::InvalidServerName)
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum ServerNamePayload {
     HostName(DnsName),
@@ -532,6 +574,310 @@ impl TlsListElement for ProtocolVersion {
     const SIZE_LEN: ListLength = ListLength::U8;
 }
 
+/// A representation of extensions present in a `ClientHello` message
+///
+/// All extensions are optional (by definition) so are represented with `Option<T>`.
+///
+/// Some extensions have an empty value and are represented with Option<()>.
+///
+/// Unknown extensions are dropped during parsing.
+#[derive(Default, Debug)]
+pub struct ClientExtensions {
+    /// Supported EC point formats (RFC4492)
+    pub ec_point_formats: Option<Vec<ECPointFormat>>,
+
+    /// Supported groups (RFC4492/RFC8446)
+    pub named_groups: Option<Vec<NamedGroup>>,
+
+    /// Supported signature schemes (RFC5246/RFC8446)
+    pub signature_schemes: Option<Vec<SignatureScheme>>,
+
+    /// Requested server name indication (RFC6066)
+    ///
+    /// The standard only supports DNS-type names, and only one name of
+    /// each type.  When parsing, unrecognised name types are discarded,
+    /// and duplicate DNS-type names cause an error.  Syntactically-invalid
+    /// DNS names also cause an error.
+    pub server_name: Option<DnsName>,
+
+    /// Session ticket offer or request (RFC5077/RFC8446)
+    pub session_ticket: Option<ClientSessionTicket>,
+
+    /// Offered ALPN protocols (RFC6066)
+    pub protocols: Option<Vec<ProtocolName>>,
+
+    /// Supported TLS versions (RFC8446)
+    pub supported_versions: Option<Vec<ProtocolVersion>>,
+
+    /// Offered key exchange shares (RFC8446)
+    pub key_shares: Option<Vec<KeyShareEntry>>,
+
+    /// Stateless HelloRetryRequest cookie (RFC8446)
+    pub cookie: Option<PayloadU16>,
+
+    /// Extended master secret is requested (RFC7627)
+    pub extended_master_secret_request: Option<()>,
+
+    /// Certificate status is requested (RFC6066)
+    pub certificate_status_request: Option<CertificateStatusRequest>,
+
+    /// QUIC transport parameters (RFC9001)
+    pub transport_parameters: Option<Payload>,
+
+    /// QUIC transport parameters (RFC9001 prior to draft 33)
+    pub transport_parameters_draft: Option<Payload>,
+
+    /// Early data is requested (RFC8446)
+    pub early_data_request: Option<()>,
+
+    /// Secure renegotiation info (RFC5746)
+    pub renegotiation_info: Option<Vec<u8>>,
+
+    /// Offered preshared key modes (RFC8446)
+    pub preshared_key_modes: Option<Vec<PSKKeyExchangeMode>>,
+
+    /// Offered preshared keys (RFC8446)
+    pub preshared_key_offer: Option<PresharedKeyOffer>,
+}
+
+impl ClientExtensions {
+    fn read_once<T>(r: &mut Reader, out: &mut Option<T>) -> Result<(), InvalidMessage>
+    where
+        T: Codec,
+    {
+        if let Some(_) = out {
+            return Err(InvalidMessage::DuplicateExtension);
+        }
+
+        *out = Some(T::read(r)?);
+        Ok(())
+    }
+
+    fn read_extension_body(
+        &mut self,
+        typ: ExtensionType,
+        r: &mut Reader,
+    ) -> Result<(), InvalidMessage> {
+        match typ {
+            ExtensionType::ECPointFormats => Self::read_once(r, &mut self.ec_point_formats)?,
+            ExtensionType::EllipticCurves => Self::read_once(r, &mut self.named_groups)?,
+            ExtensionType::SignatureAlgorithms => Self::read_once(r, &mut self.signature_schemes)?,
+            ExtensionType::ServerName => Self::read_once(r, &mut self.server_name)?,
+            ExtensionType::SessionTicket => Self::read_once(r, &mut self.session_ticket)?,
+            ExtensionType::ALProtocolNegotiation => Self::read_once(r, &mut self.protocols)?,
+            ExtensionType::SupportedVersions => Self::read_once(r, &mut self.supported_versions)?,
+            ExtensionType::KeyShare => Self::read_once(r, &mut self.key_shares)?,
+            ExtensionType::PSKKeyExchangeModes => {
+                Self::read_once(r, &mut self.preshared_key_modes)?
+            }
+            ExtensionType::PreSharedKey => Self::read_once(r, &mut self.preshared_key_offer)?,
+            ExtensionType::Cookie => Self::read_once(r, &mut self.cookie)?,
+            ExtensionType::ExtendedMasterSecret => {
+                Self::read_once(r, &mut self.extended_master_secret_request)?
+            }
+            ExtensionType::StatusRequest => {
+                Self::read_once(r, &mut self.certificate_status_request)?
+            }
+            ExtensionType::TransportParameters => {
+                Self::read_once(r, &mut self.transport_parameters)?
+            }
+            ExtensionType::TransportParametersDraft => {
+                Self::read_once(r, &mut self.transport_parameters_draft)?
+            }
+            ExtensionType::EarlyData => Self::read_once(r, &mut self.early_data_request)?,
+            // read and ignore unhandled extensions
+            _ => {
+                r.rest();
+            }
+        };
+
+        Ok(())
+    }
+
+    fn encode_all(&self, output: &mut Vec<u8>) {
+        if let Some(item) = &self.ec_point_formats {
+            ExtensionType::ECPointFormats.encode(output);
+            item.encode(LengthPrefixedBuffer::new(ListLength::U16, output).buf);
+        }
+
+        if let Some(item) = &self.named_groups {
+            ExtensionType::EllipticCurves.encode(output);
+            item.encode(LengthPrefixedBuffer::new(ListLength::U16, output).buf);
+        }
+
+        if let Some(item) = &self.signature_schemes {
+            ExtensionType::SignatureAlgorithms.encode(output);
+            item.encode(LengthPrefixedBuffer::new(ListLength::U16, output).buf);
+        }
+
+        if let Some(item) = &self.server_name {
+            ExtensionType::ServerName.encode(output);
+            item.encode(LengthPrefixedBuffer::new(ListLength::U16, output).buf);
+        }
+
+        if let Some(item) = &self.session_ticket {
+            ExtensionType::SessionTicket.encode(output);
+            item.encode(LengthPrefixedBuffer::new(ListLength::U16, output).buf);
+        }
+
+        if let Some(item) = &self.protocols {
+            ExtensionType::ALProtocolNegotiation.encode(output);
+            item.encode(LengthPrefixedBuffer::new(ListLength::U16, output).buf);
+        }
+
+        if let Some(item) = &self.supported_versions {
+            ExtensionType::SupportedVersions.encode(output);
+            item.encode(LengthPrefixedBuffer::new(ListLength::U16, output).buf);
+        }
+
+        if let Some(item) = &self.key_shares {
+            ExtensionType::KeyShare.encode(output);
+            item.encode(LengthPrefixedBuffer::new(ListLength::U16, output).buf);
+        }
+
+        if let Some(item) = &self.cookie {
+            ExtensionType::Cookie.encode(output);
+            item.encode(LengthPrefixedBuffer::new(ListLength::U16, output).buf);
+        }
+
+        if let Some(item) = &self.extended_master_secret_request {
+            ExtensionType::ExtendedMasterSecret.encode(output);
+            item.encode(LengthPrefixedBuffer::new(ListLength::U16, output).buf);
+        }
+
+        if let Some(item) = &self.certificate_status_request {
+            ExtensionType::StatusRequest.encode(output);
+            item.encode(LengthPrefixedBuffer::new(ListLength::U16, output).buf);
+        }
+
+        if let Some(item) = &self.transport_parameters {
+            ExtensionType::TransportParameters.encode(output);
+            item.encode(LengthPrefixedBuffer::new(ListLength::U16, output).buf);
+        }
+
+        if let Some(item) = &self.transport_parameters_draft {
+            ExtensionType::TransportParametersDraft.encode(output);
+            item.encode(LengthPrefixedBuffer::new(ListLength::U16, output).buf);
+        }
+
+        if let Some(item) = &self.early_data_request {
+            ExtensionType::EarlyData.encode(output);
+            item.encode(LengthPrefixedBuffer::new(ListLength::U16, output).buf);
+        }
+
+        if let Some(item) = &self.preshared_key_modes {
+            ExtensionType::PSKKeyExchangeModes.encode(output);
+            item.encode(LengthPrefixedBuffer::new(ListLength::U16, output).buf);
+        }
+
+        // *Required* by protocol to be final extension (if present)
+        if let Some(item) = &self.preshared_key_offer {
+            ExtensionType::PreSharedKey.encode(output);
+            item.encode(LengthPrefixedBuffer::new(ListLength::U16, output).buf);
+        }
+    }
+
+    /// FIXME: would like this to share code with `encode_all`, but without any
+    /// unnecessary work or typing. macros?
+    pub fn collect_used_extensions(&self) -> Vec<ExtensionType> {
+        let mut r = Vec::with_capacity(20);
+
+        if let Some(_) = &self.ec_point_formats {
+            r.push(ExtensionType::ECPointFormats);
+        }
+
+        if let Some(_) = &self.named_groups {
+            r.push(ExtensionType::EllipticCurves);
+        }
+
+        if let Some(_) = &self.signature_schemes {
+            r.push(ExtensionType::SignatureAlgorithms);
+        }
+
+        if let Some(_) = &self.server_name {
+            r.push(ExtensionType::ServerName);
+        }
+
+        if let Some(_) = &self.session_ticket {
+            r.push(ExtensionType::SessionTicket);
+        }
+
+        if let Some(_) = &self.protocols {
+            r.push(ExtensionType::ALProtocolNegotiation);
+        }
+
+        if let Some(_) = &self.supported_versions {
+            r.push(ExtensionType::SupportedVersions);
+        }
+
+        if let Some(_) = &self.key_shares {
+            r.push(ExtensionType::KeyShare);
+        }
+
+        if let Some(_) = &self.cookie {
+            r.push(ExtensionType::Cookie);
+        }
+
+        if let Some(_) = &self.extended_master_secret_request {
+            r.push(ExtensionType::ExtendedMasterSecret);
+        }
+
+        if let Some(_) = &self.certificate_status_request {
+            r.push(ExtensionType::StatusRequest);
+        }
+
+        if let Some(_) = &self.transport_parameters {
+            r.push(ExtensionType::TransportParameters);
+        }
+
+        if let Some(_) = &self.transport_parameters_draft {
+            r.push(ExtensionType::TransportParametersDraft);
+        }
+
+        if let Some(_) = &self.early_data_request {
+            r.push(ExtensionType::EarlyData);
+        }
+
+        if let Some(_) = &self.preshared_key_modes {
+            r.push(ExtensionType::PSKKeyExchangeModes);
+        }
+
+        if let Some(_) = &self.preshared_key_offer {
+            r.push(ExtensionType::PreSharedKey);
+        }
+
+        r
+    }
+}
+
+impl Codec for ClientExtensions {
+    fn encode(&self, bytes: &mut Vec<u8>) {
+        self.encode_all(LengthPrefixedBuffer::new(ListLength::U16, bytes).buf);
+    }
+
+    fn read(r: &mut Reader) -> Result<Self, InvalidMessage> {
+        let mut out = Self::default();
+
+        // extensions length can be absent if no extensions
+        if !r.any_left() {
+            return Ok(out);
+        }
+
+        let len = usize::from(u16::read(r)?);
+        let mut sub = r.sub(len)?;
+
+        while sub.any_left() {
+            let typ = ExtensionType::read(&mut sub)?;
+            let len = usize::from(u16::read(&mut sub)?);
+            let mut ext_body = sub.sub(len)?;
+            out.read_extension_body(typ, &mut ext_body)?;
+            ext_body.expect_empty("ClientExtension")?;
+        }
+
+        Ok(out)
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum ClientExtension {
     ECPointFormats(Vec<ECPointFormat>),
@@ -680,6 +1026,22 @@ impl ClientExtension {
 pub enum ClientSessionTicket {
     Request,
     Offer(Payload),
+}
+
+impl Codec for ClientSessionTicket {
+    fn encode(&self, bytes: &mut Vec<u8>) {
+        match self {
+            Self::Request => (),
+            Self::Offer(p) => p.encode(bytes),
+        }
+    }
+
+    fn read(r: &mut Reader) -> Result<Self, InvalidMessage> {
+        Ok(match r.left() {
+            0 => Self::Request,
+            _ => Self::Offer(Payload::read(r)),
+        })
+    }
 }
 
 #[derive(Clone, Debug)]
