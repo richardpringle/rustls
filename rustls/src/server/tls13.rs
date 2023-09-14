@@ -112,15 +112,15 @@ mod client_hello {
             binder: &[u8],
         ) -> bool {
             let binder_plaintext = match &client_hello.payload {
-                MessagePayload::Handshake { parsed, .. } => {
-                    parsed.get_encoding_for_binder_signing()
+                MessagePayload::Handshake { parsed, encoded } => {
+                    &encoded.0[..encoded.0.len() - parsed.total_binder_length()]
                 }
                 _ => unreachable!(),
             };
 
             let handshake_hash = self
                 .transcript
-                .get_hash_given(&binder_plaintext);
+                .get_hash_given(binder_plaintext);
 
             let key_schedule = KeyScheduleEarly::new(suite, psk);
             let real_binder =
