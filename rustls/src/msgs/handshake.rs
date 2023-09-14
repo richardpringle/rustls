@@ -657,6 +657,7 @@ impl ClientExtensions {
         &mut self,
         typ: ExtensionType,
         r: &mut Reader,
+        checker: &mut collections::HashSet<u16>,
     ) -> Result<(), InvalidMessage> {
         match typ {
             ExtensionType::ECPointFormats => Self::read_once(r, &mut self.ec_point_formats)?,
@@ -685,8 +686,11 @@ impl ClientExtensions {
                 Self::read_once(r, &mut self.transport_parameters_draft)?
             }
             ExtensionType::EarlyData => Self::read_once(r, &mut self.early_data_request)?,
-            // read and ignore unhandled extensions
+            // check unhandled extensions for uniqueness, but otherwise consume and ignore their values
             _ => {
+                if !checker.insert(typ.get_u16()) {
+                    return Err(InvalidMessage::DuplicateExtension);
+                }
                 r.rest();
             }
         };
@@ -863,6 +867,8 @@ impl Codec for ClientExtensions {
             return Ok(out);
         }
 
+        let mut checker = collections::HashSet::new();
+
         let len = usize::from(u16::read(r)?);
         let mut sub = r.sub(len)?;
 
@@ -870,7 +876,7 @@ impl Codec for ClientExtensions {
             let typ = ExtensionType::read(&mut sub)?;
             let len = usize::from(u16::read(&mut sub)?);
             let mut ext_body = sub.sub(len)?;
-            out.read_extension_body(typ, &mut ext_body)?;
+            out.read_extension_body(typ, &mut ext_body, &mut checker)?;
             ext_body.expect_empty("ClientExtension")?;
         }
 
