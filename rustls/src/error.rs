@@ -140,6 +140,8 @@ pub enum InvalidMessage {
     UnsupportedKeyExchangeAlgorithm(KeyExchangeAlgorithm),
     /// A peer sent a message where a given extension type was repeated
     DuplicateExtension,
+    /// A peer sent a ClientHello with a "pre_shared_key" extension before another extension
+    PreSharedKeyIsNotFinalExtension,
 }
 
 impl From<InvalidMessage> for Error {

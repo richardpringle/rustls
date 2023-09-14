@@ -878,6 +878,11 @@ impl Codec for ClientExtensions {
             let mut ext_body = sub.sub(len)?;
             out.read_extension_body(typ, &mut ext_body, &mut checker)?;
             ext_body.expect_empty("ClientExtension")?;
+
+            // special case: "The "pre_shared_key" extension MUST be the last extension in the ClientHello"
+            if typ == ExtensionType::PreSharedKey && sub.any_left() {
+                return Err(InvalidMessage::PreSharedKeyIsNotFinalExtension);
+            }
         }
 
         Ok(out)
