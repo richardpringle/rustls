@@ -8,7 +8,7 @@ use crate::error::Error;
 #[cfg(feature = "logging")]
 use crate::log::trace;
 use crate::msgs::enums::NamedGroup;
-use crate::msgs::handshake::ClientExtension;
+use crate::msgs::handshake::ClientExtensions;
 use crate::msgs::persist;
 use crate::sign;
 use crate::suites::SupportedCipherSuite;
@@ -576,7 +576,13 @@ impl ClientConnection {
         name: ServerName,
     ) -> Result<Self, Error> {
         Ok(Self {
-            inner: ConnectionCore::for_client(config, name, Vec::new(), Protocol::Tcp)?.into(),
+            inner: ConnectionCore::for_client(
+                config,
+                name,
+                ClientExtensions::default(),
+                Protocol::Tcp,
+            )?
+            .into(),
         })
     }
 
@@ -677,7 +683,7 @@ impl ConnectionCore<ClientConnectionData> {
     pub(crate) fn for_client<C: CryptoProvider>(
         config: Arc<ClientConfig<C>>,
         name: ServerName,
-        extra_exts: Vec<ClientExtension>,
+        extensions: ClientExtensions,
         proto: Protocol,
     ) -> Result<Self, Error> {
         let mut common_state = CommonState::new(Side::Client);
@@ -694,7 +700,7 @@ impl ConnectionCore<ClientConnectionData> {
             data: &mut data,
         };
 
-        let state = hs::start_handshake(name, extra_exts, config, &mut cx)?;
+        let state = hs::start_handshake(name, extensions, config, &mut cx)?;
         Ok(Self::new(state, data, common_state))
     }
 

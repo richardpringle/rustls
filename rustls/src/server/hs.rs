@@ -9,11 +9,11 @@ use crate::error::{Error, PeerIncompatible, PeerMisbehaved};
 use crate::hash_hs::{HandshakeHash, HandshakeHashBuffer};
 #[cfg(feature = "logging")]
 use crate::log::{debug, trace};
-use crate::msgs::enums::{Compression, ExtensionType};
+use crate::msgs::enums::Compression;
 #[cfg(feature = "tls12")]
 use crate::msgs::handshake::SessionId;
 use crate::msgs::handshake::{ClientHelloPayload, Random, ServerExtension};
-use crate::msgs::handshake::{ConvertProtocolNameList, ConvertServerNameList, HandshakePayload};
+use crate::msgs::handshake::{ConvertProtocolNameList, HandshakePayload};
 use crate::msgs::message::{Message, MessagePayload};
 use crate::msgs::persist;
 use crate::server::{ClientHello, ServerConfig};
@@ -74,8 +74,7 @@ impl ExtensionProcessing {
     ) -> Result<(), Error> {
         // ALPN
         let our_protocols = &config.alpn_protocols;
-        let maybe_their_protocols = hello.get_alpn_extension();
-        if let Some(their_protocols) = maybe_their_protocols {
+        if let Some(ref their_protocols) = hello.extensions.protocols {
             let their_protocols = their_protocols.to_slices();
 
             if their_protocols
@@ -112,7 +111,7 @@ impl ExtensionProcessing {
                 // successful establishment of connections between peers that can't understand
                 // each other.
                 if cx.common.alpn_protocol.is_none()
-                    && (!our_protocols.is_empty() || maybe_their_protocols.is_some())
+                    && (!our_protocols.is_empty() || hello.extensions.protocols.is_some())
                 {
                     return Err(cx.common.send_fatal_alert(
                         AlertDescription::NoApplicationProtocol,
@@ -120,8 +119,16 @@ impl ExtensionProcessing {
                     ));
                 }
 
-                match hello.get_quic_params_extension() {
-                    Some(params) => cx.common.quic.params = Some(params),
+                match hello
+                    .extensions
+                    .transport_parameters
+                    .as_ref()
+                    .or(hello
+                        .extensions
+                        .transport_parameters_draft
+                        .as_ref())
+                {
+                    Some(params) => cx.common.quic.params = Some(params.0.clone()),
                     None => {
                         return Err(cx
                             .common
@@ -133,7 +140,7 @@ impl ExtensionProcessing {
 
         let for_resume = resumedata.is_some();
         // SNI
-        if !for_resume && hello.get_sni_extension().is_some() {
+        if !for_resume && hello.extensions.server_name.is_some() {
             self.exts
                 .push(ServerExtension::ServerNameAck);
         }
@@ -143,7 +150,8 @@ impl ExtensionProcessing {
         // to send.
         if !for_resume
             && hello
-                .find_extension(ExtensionType::StatusRequest)
+                .extensions
+                .certificate_status_request
                 .is_some()
         {
             if ocsp_response.is_some() && !cx.common.is_tls13() {
@@ -171,7 +179,8 @@ impl ExtensionProcessing {
         // Renegotiation.
         // (We don't do reneg at all, but would support the secure version if we did.)
         let secure_reneg_offered = hello
-            .find_extension(ExtensionType::RenegotiationInfo)
+            .extensions
+            .renegotiation_info
             .is_some()
             || hello
                 .cipher_suites
@@ -186,7 +195,8 @@ impl ExtensionProcessing {
         // If we get any SessionTicket extension and have tickets enabled,
         // we send an ack.
         if hello
-            .find_extension(ExtensionType::SessionTicket)
+            .extensions
+            .session_ticket
             .is_some()
             && config.ticketer.enabled()
         {
@@ -252,8 +262,10 @@ impl<C: CryptoProvider> ExpectClientHello<C> {
             .supports_version(ProtocolVersion::TLSv1_2);
 
         // Are we doing TLS1.3?
-        let maybe_versions_ext = client_hello.get_versions_extension();
-        let version = if let Some(versions) = maybe_versions_ext {
+        let version = if let Some(ref versions) = client_hello
+            .extensions
+            .supported_versions
+        {
             if versions.contains(&ProtocolVersion::TLSv1_3) && tls13_enabled {
                 ProtocolVersion::TLSv1_3
             } else if !versions.contains(&ProtocolVersion::TLSv1_2) || !tls12_enabled {
@@ -315,7 +327,10 @@ impl<C: CryptoProvider> ExpectClientHello<C> {
             let client_hello = ClientHello::new(
                 &cx.data.sni,
                 &sig_schemes,
-                client_hello.get_alpn_extension(),
+                client_hello
+                    .extensions
+                    .protocols
+                    .as_ref(),
                 &client_hello.cipher_suites,
             );
 
@@ -450,13 +465,6 @@ pub(super) fn process_client_hello<'a>(
         ));
     }
 
-    if client_hello.has_duplicate_extension() {
-        return Err(cx.common.send_fatal_alert(
-            AlertDescription::DecodeError,
-            PeerMisbehaved::DuplicateClientHelloExtensions,
-        ));
-    }
-
     // No handshake messages should follow this one in this flight.
     cx.common.check_aligned_handshake()?;
 
@@ -465,24 +473,8 @@ pub(super) fn process_client_hello<'a>(
     // send an Illegal Parameter alert instead of the Internal Error alert
     // (or whatever) that we'd send if this were checked later or in a
     // different way.
-    let sni: Option<DnsName> = match client_hello.get_sni_extension() {
-        Some(sni) => {
-            if sni.has_duplicate_names_for_type() {
-                return Err(cx.common.send_fatal_alert(
-                    AlertDescription::DecodeError,
-                    PeerMisbehaved::DuplicateServerNameTypes,
-                ));
-            }
-
-            if let Some(hostname) = sni.get_single_hostname() {
-                Some(hostname.to_lowercase_owned())
-            } else {
-                return Err(cx.common.send_fatal_alert(
-                    AlertDescription::IllegalParameter,
-                    PeerMisbehaved::ServerNameMustContainOneHostName,
-                ));
-            }
-        }
+    let sni = match &client_hello.extensions.server_name {
+        Some(dns_name) => Some(dns_name.borrow().to_lowercase_owned()),
         None => None,
     };
 
@@ -497,7 +489,9 @@ pub(super) fn process_client_hello<'a>(
     }
 
     let sig_schemes = client_hello
-        .get_sigalgs_extension()
+        .extensions
+        .signature_schemes
+        .as_ref()
         .ok_or_else(|| {
             cx.common.send_fatal_alert(
                 AlertDescription::HandshakeFailure,

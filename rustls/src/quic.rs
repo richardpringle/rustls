@@ -6,7 +6,8 @@ use crate::crypto::CryptoProvider;
 use crate::enums::{AlertDescription, ProtocolVersion};
 use crate::error::Error;
 use crate::hkdf;
-use crate::msgs::handshake::{ClientExtension, ServerExtension};
+use crate::msgs::base::Payload;
+use crate::msgs::handshake::{ClientExtensions, ServerExtension};
 use crate::server::{ServerConfig, ServerConnectionData};
 use crate::tls13::key_schedule::hkdf_expand_label_block;
 use crate::tls13::Tls13CipherSuite;
@@ -148,12 +149,18 @@ impl ClientConnection {
             ));
         }
 
-        let ext = match quic_version {
-            Version::V1Draft => ClientExtension::TransportParametersDraft(params),
-            Version::V1 | Version::V2 => ClientExtension::TransportParameters(params),
+        let extensions = match quic_version {
+            Version::V1Draft => ClientExtensions {
+                transport_parameters_draft: Some(Payload(params)),
+                ..Default::default()
+            },
+            Version::V1 | Version::V2 => ClientExtensions {
+                transport_parameters: Some(Payload(params)),
+                ..Default::default()
+            },
         };
 
-        let mut inner = ConnectionCore::for_client(config, name, vec![ext], Protocol::Quic)?;
+        let mut inner = ConnectionCore::for_client(config, name, extensions, Protocol::Quic)?;
         inner.common_state.quic.version = quic_version;
         Ok(Self {
             inner: inner.into(),

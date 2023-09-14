@@ -162,7 +162,9 @@ mod client_hello {
             }
 
             let groups_ext = client_hello
-                .get_namedgroups_extension()
+                .extensions
+                .named_groups
+                .as_ref()
                 .ok_or_else(|| {
                     cx.common.send_fatal_alert(
                         AlertDescription::HandshakeFailure,
@@ -173,7 +175,9 @@ mod client_hello {
             sigschemes_ext.retain(SignatureScheme::supported_in_tls13);
 
             let shares_ext = client_hello
-                .get_keyshare_extension()
+                .extensions
+                .key_shares
+                .as_ref()
                 .ok_or_else(|| {
                     cx.common.send_fatal_alert(
                         AlertDescription::HandshakeFailure,
@@ -188,10 +192,13 @@ mod client_hello {
                 ));
             }
 
-            let early_data_requested = client_hello.early_data_extension_offered();
-
             // EarlyData extension is illegal in second ClientHello
-            if self.done_retry && early_data_requested {
+            if self.done_retry
+                && client_hello
+                    .extensions
+                    .early_data_request
+                    .is_some()
+            {
                 return Err({
                     cx.common.send_fatal_alert(
                         AlertDescription::IllegalParameter,
@@ -256,13 +263,15 @@ mod client_hello {
                             extra_exts: self.extra_exts,
                         });
 
-                        return if early_data_requested {
-                            Ok(Box::new(ExpectAndSkipRejectedEarlyData {
+                        return match client_hello
+                            .extensions
+                            .early_data_request
+                        {
+                            Some(_) => Ok(Box::new(ExpectAndSkipRejectedEarlyData {
                                 skip_data_left: skip_early_data,
                                 next,
-                            }))
-                        } else {
-                            Ok(next)
+                            })),
+                            None => Ok(next),
                         };
                     }
 
@@ -276,19 +285,19 @@ mod client_hello {
             let mut chosen_psk_index = None;
             let mut resumedata = None;
 
-            if let Some(psk_offer) = client_hello.get_psk() {
-                if !client_hello.check_psk_ext_is_last() {
-                    return Err(cx.common.send_fatal_alert(
-                        AlertDescription::IllegalParameter,
-                        PeerMisbehaved::PskExtensionMustBeLast,
-                    ));
-                }
-
+            if let Some(psk_offer) = &client_hello
+                .extensions
+                .preshared_key_offer
+            {
                 // "A client MUST provide a "psk_key_exchange_modes" extension if it
                 //  offers a "pre_shared_key" extension. If clients offer
                 //  "pre_shared_key" without a "psk_key_exchange_modes" extension,
                 //  servers MUST abort the handshake." - RFC8446 4.2.9
-                if client_hello.get_psk_modes().is_none() {
+                if client_hello
+                    .extensions
+                    .preshared_key_modes
+                    .is_none()
+                {
                     return Err(cx.common.send_fatal_alert(
                         AlertDescription::MissingExtension,
                         PeerMisbehaved::MissingPskModesExtension,
@@ -611,10 +620,12 @@ mod client_hello {
         suite: &'static Tls13CipherSuite,
         config: &ServerConfig<C>,
     ) -> EarlyDataDecision {
-        let early_data_requested = client_hello.early_data_extension_offered();
-        let rejected_or_disabled = match early_data_requested {
-            true => EarlyDataDecision::RequestedButRejected,
-            false => EarlyDataDecision::Disabled,
+        let rejected_or_disabled = match client_hello
+            .extensions
+            .early_data_request
+        {
+            Some(_) => EarlyDataDecision::RequestedButRejected,
+            None => EarlyDataDecision::Disabled,
         };
 
         let resume = match resumedata {
@@ -645,7 +656,10 @@ mod client_hello {
          *  - The selected ALPN [RFC7301] protocol, if any"
          *
          * (RFC8446, 4.2.10) */
-        let early_data_possible = early_data_requested
+        let early_data_possible = client_hello
+            .extensions
+            .early_data_request
+            .is_some()
             && resume.is_fresh()
             && Some(resume.version) == cx.common.negotiated_version
             && resume.cipher_suite == suite.common.suite

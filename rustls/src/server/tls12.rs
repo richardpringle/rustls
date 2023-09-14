@@ -39,9 +39,9 @@ mod client_hello {
     use crate::msgs::enums::NamedGroup;
     use crate::msgs::enums::{ClientCertificateType, Compression};
     use crate::msgs::handshake::ServerECDHParams;
+    use crate::msgs::handshake::SessionId;
     use crate::msgs::handshake::{CertificateRequestPayload, ClientSessionTicket, Random};
     use crate::msgs::handshake::{CertificateStatus, ECDHEServerKeyExchange};
-    use crate::msgs::handshake::{ClientExtension, SessionId};
     use crate::msgs::handshake::{ClientHelloPayload, ServerHelloPayload};
     use crate::msgs::handshake::{ServerExtension, ServerKeyExchangePayload};
     use crate::sign;
@@ -73,12 +73,18 @@ mod client_hello {
             // -- TLS1.2 only from hereon in --
             self.transcript.add_message(chm);
 
-            if client_hello.ems_support_offered() {
+            if client_hello
+                .extensions
+                .extended_master_secret_request
+                .is_some()
+            {
                 self.using_ems = true;
             }
 
             let groups_ext = client_hello
-                .get_namedgroups_extension()
+                .extensions
+                .named_groups
+                .as_ref()
                 .ok_or_else(|| {
                     cx.common.send_fatal_alert(
                         AlertDescription::HandshakeFailure,
@@ -86,7 +92,9 @@ mod client_hello {
                     )
                 })?;
             let ecpoints_ext = client_hello
-                .get_ecpoints_extension()
+                .extensions
+                .ec_point_formats
+                .as_ref()
                 .ok_or_else(|| {
                     cx.common.send_fatal_alert(
                         AlertDescription::HandshakeFailure,
@@ -123,11 +131,11 @@ mod client_hello {
             //
             let mut ticket_received = false;
             let resume_data = client_hello
-                .get_ticket_extension()
-                .and_then(|ticket_ext| match ticket_ext {
-                    ClientExtension::SessionTicket(ClientSessionTicket::Offer(ticket)) => {
-                        Some(ticket)
-                    }
+                .extensions
+                .session_ticket
+                .as_ref()
+                .and_then(|ticket| match ticket {
+                    ClientSessionTicket::Offer(ticket) => Some(ticket),
                     _ => None,
                 })
                 .and_then(|ticket| {

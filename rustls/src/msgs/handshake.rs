@@ -581,7 +581,7 @@ impl TlsListElement for ProtocolVersion {
 /// Some extensions have an empty value and are represented with Option<()>.
 ///
 /// Unknown extensions are dropped during parsing.
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct ClientExtensions {
     /// Supported EC point formats (RFC4492)
     pub ec_point_formats: Option<Vec<ECPointFormat>>,
@@ -995,7 +995,7 @@ impl Codec for ClientExtension {
     }
 }
 
-fn trim_hostname_trailing_dot_for_sni(dns_name: DnsNameRef) -> DnsName {
+pub fn trim_hostname_trailing_dot_for_sni(dns_name: DnsNameRef) -> DnsName {
     let dns_name_str: &str = dns_name.as_ref();
 
     // RFC6066: "The hostname is represented as a byte string using
@@ -1156,7 +1156,7 @@ pub struct ClientHelloPayload {
     pub session_id: SessionId,
     pub cipher_suites: Vec<CipherSuite>,
     pub compression_methods: Vec<Compression>,
-    pub extensions: Vec<ClientExtension>,
+    pub extensions: ClientExtensions,
 }
 
 impl Codec for ClientHelloPayload {
@@ -1166,30 +1166,22 @@ impl Codec for ClientHelloPayload {
         self.session_id.encode(bytes);
         self.cipher_suites.encode(bytes);
         self.compression_methods.encode(bytes);
-
-        if !self.extensions.is_empty() {
-            self.extensions.encode(bytes);
-        }
+        self.extensions.encode(bytes);
     }
 
     fn read(r: &mut Reader) -> Result<Self, InvalidMessage> {
-        let mut ret = Self {
+        let ret = Self {
             client_version: ProtocolVersion::read(r)?,
             random: Random::read(r)?,
             session_id: SessionId::read(r)?,
             cipher_suites: Vec::read(r)?,
             compression_methods: Vec::read(r)?,
-            extensions: Vec::new(),
+            extensions: ClientExtensions::read(r)?,
         };
 
-        if r.any_left() {
-            ret.extensions = Vec::read(r)?;
-        }
-
-        match (r.any_left(), ret.extensions.is_empty()) {
-            (true, _) => Err(InvalidMessage::TrailingData("ClientHelloPayload")),
-            (_, true) => Err(InvalidMessage::MissingData("ClientHelloPayload")),
-            _ => Ok(ret),
+        match r.any_left() {
+            true => Err(InvalidMessage::TrailingData("ClientHelloPayload")),
+            false => Ok(ret),
         }
     }
 }
@@ -1207,102 +1199,8 @@ impl TlsListElement for ClientExtension {
 }
 
 impl ClientHelloPayload {
-    /// Returns true if there is more than one extension of a given
-    /// type.
-    pub fn has_duplicate_extension(&self) -> bool {
-        let mut seen = collections::HashSet::new();
-
-        for ext in &self.extensions {
-            let typ = ext.get_type().get_u16();
-
-            if seen.contains(&typ) {
-                return true;
-            }
-            seen.insert(typ);
-        }
-
-        false
-    }
-
-    pub fn find_extension(&self, ext: ExtensionType) -> Option<&ClientExtension> {
-        self.extensions
-            .iter()
-            .find(|x| x.get_type() == ext)
-    }
-
-    pub fn get_sni_extension(&self) -> Option<&[ServerName]> {
-        let ext = self.find_extension(ExtensionType::ServerName)?;
-        match *ext {
-            ClientExtension::ServerName(ref req) => Some(req),
-            _ => None,
-        }
-    }
-
-    pub fn get_sigalgs_extension(&self) -> Option<&[SignatureScheme]> {
-        let ext = self.find_extension(ExtensionType::SignatureAlgorithms)?;
-        match *ext {
-            ClientExtension::SignatureAlgorithms(ref req) => Some(req),
-            _ => None,
-        }
-    }
-
-    pub fn get_namedgroups_extension(&self) -> Option<&[NamedGroup]> {
-        let ext = self.find_extension(ExtensionType::EllipticCurves)?;
-        match *ext {
-            ClientExtension::NamedGroups(ref req) => Some(req),
-            _ => None,
-        }
-    }
-
-    pub fn get_ecpoints_extension(&self) -> Option<&[ECPointFormat]> {
-        let ext = self.find_extension(ExtensionType::ECPointFormats)?;
-        match *ext {
-            ClientExtension::ECPointFormats(ref req) => Some(req),
-            _ => None,
-        }
-    }
-
-    pub fn get_alpn_extension(&self) -> Option<&Vec<ProtocolName>> {
-        let ext = self.find_extension(ExtensionType::ALProtocolNegotiation)?;
-        match *ext {
-            ClientExtension::Protocols(ref req) => Some(req),
-            _ => None,
-        }
-    }
-
-    pub fn get_quic_params_extension(&self) -> Option<Vec<u8>> {
-        let ext = self
-            .find_extension(ExtensionType::TransportParameters)
-            .or_else(|| self.find_extension(ExtensionType::TransportParametersDraft))?;
-        match *ext {
-            ClientExtension::TransportParameters(ref bytes)
-            | ClientExtension::TransportParametersDraft(ref bytes) => Some(bytes.to_vec()),
-            _ => None,
-        }
-    }
-
-    pub fn get_ticket_extension(&self) -> Option<&ClientExtension> {
-        self.find_extension(ExtensionType::SessionTicket)
-    }
-
-    pub fn get_versions_extension(&self) -> Option<&[ProtocolVersion]> {
-        let ext = self.find_extension(ExtensionType::SupportedVersions)?;
-        match *ext {
-            ClientExtension::SupportedVersions(ref vers) => Some(vers),
-            _ => None,
-        }
-    }
-
-    pub fn get_keyshare_extension(&self) -> Option<&[KeyShareEntry]> {
-        let ext = self.find_extension(ExtensionType::KeyShare)?;
-        match *ext {
-            ClientExtension::KeyShare(ref shares) => Some(shares),
-            _ => None,
-        }
-    }
-
     pub fn has_keyshare_extension_with_duplicates(&self) -> bool {
-        if let Some(entries) = self.get_keyshare_extension() {
+        if let Some(entries) = &self.extensions.key_shares {
             let mut seen = collections::HashSet::new();
 
             for kse in entries {
@@ -1317,49 +1215,18 @@ impl ClientHelloPayload {
         false
     }
 
-    pub fn get_psk(&self) -> Option<&PresharedKeyOffer> {
-        let ext = self.find_extension(ExtensionType::PreSharedKey)?;
-        match *ext {
-            ClientExtension::PresharedKey(ref psk) => Some(psk),
-            _ => None,
-        }
-    }
-
-    pub fn check_psk_ext_is_last(&self) -> bool {
-        self.extensions
-            .last()
-            .map_or(false, |ext| ext.get_type() == ExtensionType::PreSharedKey)
-    }
-
-    pub fn get_psk_modes(&self) -> Option<&[PSKKeyExchangeMode]> {
-        let ext = self.find_extension(ExtensionType::PSKKeyExchangeModes)?;
-        match *ext {
-            ClientExtension::PresharedKeyModes(ref psk_modes) => Some(psk_modes),
-            _ => None,
-        }
-    }
-
     pub fn psk_mode_offered(&self, mode: PSKKeyExchangeMode) -> bool {
-        self.get_psk_modes()
+        self.extensions
+            .preshared_key_modes
+            .as_ref()
             .map(|modes| modes.contains(&mode))
             .unwrap_or(false)
     }
 
     pub fn set_psk_binder(&mut self, binder: impl Into<Vec<u8>>) {
-        let last_extension = self.extensions.last_mut();
-        if let Some(ClientExtension::PresharedKey(ref mut offer)) = last_extension {
+        if let Some(ref mut offer) = &mut self.extensions.preshared_key_offer {
             offer.binders[0] = PresharedKeyBinder::from(binder.into());
         }
-    }
-
-    pub fn ems_support_offered(&self) -> bool {
-        self.find_extension(ExtensionType::ExtendedMasterSecret)
-            .is_some()
-    }
-
-    pub fn early_data_extension_offered(&self) -> bool {
-        self.find_extension(ExtensionType::EarlyData)
-            .is_some()
     }
 }
 
@@ -2564,9 +2431,9 @@ impl HandshakeMessagePayload {
     }
 
     pub fn total_binder_length(&self) -> usize {
-        match self.payload {
-            HandshakePayload::ClientHello(ref ch) => match ch.extensions.last() {
-                Some(ClientExtension::PresharedKey(ref offer)) => {
+        match &self.payload {
+            HandshakePayload::ClientHello(ch) => match &ch.extensions.preshared_key_offer {
+                Some(offer) => {
                     let mut binders_encoding = Vec::new();
                     offer
                         .binders
