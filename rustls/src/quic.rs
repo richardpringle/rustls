@@ -1,3 +1,13 @@
+use alloc::boxed::Box;
+use alloc::collections::VecDeque;
+use alloc::sync::Arc;
+use alloc::vec;
+use alloc::vec::Vec;
+use core::fmt::{self, Debug};
+use core::ops::{Deref, DerefMut};
+
+use pki_types::ServerName;
+
 /// This module contains optional APIs for implementing QUIC TLS.
 use crate::client::{ClientConfig, ClientConnectionData};
 use crate::common_state::{CommonState, Protocol, Side, DEFAULT_BUFFER_LIMIT};
@@ -14,16 +24,6 @@ use crate::tls13::key_schedule::{
 };
 use crate::tls13::Tls13CipherSuite;
 use crate::vecbuf::ChunkVecBuffer;
-
-use pki_types::ServerName;
-
-use alloc::boxed::Box;
-use alloc::collections::VecDeque;
-use alloc::sync::Arc;
-use alloc::vec;
-use alloc::vec::Vec;
-use core::fmt::{self, Debug};
-use core::ops::{Deref, DerefMut};
 
 /// A QUIC client or server connection.
 #[derive(Debug)]
@@ -900,9 +900,8 @@ impl Default for Version {
 
 #[cfg(test)]
 mod tests {
-    use crate::quic::HeaderProtectionKey;
-
     use super::PacketKey;
+    use crate::quic::HeaderProtectionKey;
 
     #[test]
     fn auto_traits() {

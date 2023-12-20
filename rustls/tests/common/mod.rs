@@ -6,23 +6,20 @@ use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
 use pki_types::{CertificateDer, CertificateRevocationListDer, PrivateKeyDer, ServerName};
-use webpki::anchor_from_trusted_cert;
-
 use rustls::client::{ServerCertVerifierBuilder, WebPkiServerVerifier};
-use rustls::internal::msgs::codec::Reader;
-use rustls::internal::msgs::message::{Message, OpaqueMessage, PlainMessage};
-use rustls::server::{ClientCertVerifierBuilder, WebPkiClientVerifier};
-use rustls::Connection;
-use rustls::Error;
-use rustls::RootCertStore;
-use rustls::{ClientConfig, ClientConnection};
-use rustls::{ConnectionCommon, ServerConfig, ServerConnection, SideData};
-
 #[cfg(all(not(feature = "ring"), feature = "aws_lc_rs"))]
 pub use rustls::crypto::aws_lc_rs as provider;
 #[cfg(feature = "ring")]
 pub use rustls::crypto::ring as provider;
 use rustls::crypto::CryptoProvider;
+use rustls::internal::msgs::codec::Reader;
+use rustls::internal::msgs::message::{Message, OpaqueMessage, PlainMessage};
+use rustls::server::{ClientCertVerifierBuilder, WebPkiClientVerifier};
+use rustls::{
+    ClientConfig, ClientConnection, Connection, ConnectionCommon, Error, RootCertStore,
+    ServerConfig, ServerConnection, SideData,
+};
+use webpki::anchor_from_trusted_cert;
 
 macro_rules! embed_files {
     (

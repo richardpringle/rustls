@@ -1,18 +1,15 @@
-use crate::client;
-use crate::enums::SignatureScheme;
-use crate::error::Error;
-use crate::limited_cache;
-use crate::msgs::handshake::CertificateChain;
-use crate::msgs::persist;
-use crate::sign;
-use crate::NamedGroup;
-
-use pki_types::ServerName;
-
 use alloc::collections::VecDeque;
 use alloc::sync::Arc;
 use core::fmt;
 use std::sync::Mutex;
+
+use pki_types::ServerName;
+
+use crate::enums::SignatureScheme;
+use crate::error::Error;
+use crate::msgs::handshake::CertificateChain;
+use crate::msgs::persist;
+use crate::{client, limited_cache, sign, NamedGroup};
 
 /// An implementer of `ClientSessionStore` which does nothing.
 #[derive(Debug)]
@@ -220,6 +217,8 @@ impl client::ResolvesClientCert for AlwaysResolvesClientCert {
 
 #[cfg(all(test, any(feature = "ring", feature = "aws_lc_rs")))]
 mod tests {
+    use pki_types::{ServerName, UnixTime};
+
     use super::NoClientSessionStorage;
     use crate::client::ClientSessionStore;
     use crate::msgs::enums::NamedGroup;
@@ -229,8 +228,6 @@ mod tests {
     use crate::msgs::persist::Tls13ClientSessionValue;
     use crate::suites::SupportedCipherSuite;
     use crate::test_provider::cipher_suite;
-
-    use pki_types::{ServerName, UnixTime};
 
     #[test]
     fn test_noclientsessionstorage_does_nothing() {

@@ -579,9 +579,8 @@ const READ_SIZE: usize = 4096;
 mod tests {
     use std::io;
 
-    use crate::msgs::message::Message;
-
     use super::*;
+    use crate::msgs::message::Message;
 
     #[test]
     fn check_incremental() {

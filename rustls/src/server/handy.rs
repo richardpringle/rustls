@@ -1,19 +1,17 @@
-use crate::error::Error;
-use crate::limited_cache;
-use crate::msgs::handshake::CertificateChain;
-use crate::server;
-use crate::server::ClientHello;
-use crate::sign;
-use crate::webpki::{verify_server_name, ParsedCertificate};
-
-use pki_types::{DnsName, ServerName};
-
 use alloc::string::{String, ToString};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::fmt::{Debug, Formatter};
 use std::collections::HashMap;
 use std::sync::Mutex;
+
+use pki_types::{DnsName, ServerName};
+
+use crate::error::Error;
+use crate::msgs::handshake::CertificateChain;
+use crate::server::ClientHello;
+use crate::webpki::{verify_server_name, ParsedCertificate};
+use crate::{limited_cache, server, sign};
 
 /// Something which never stores sessions.
 #[derive(Debug)]
@@ -204,9 +202,7 @@ impl server::ResolvesServerCert for ResolvesServerCertUsingSni {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::server::ProducesTickets;
-    use crate::server::ResolvesServerCert;
-    use crate::server::StoresServerSessions;
+    use crate::server::{ProducesTickets, ResolvesServerCert, StoresServerSessions};
 
     #[test]
     fn test_noserversessionstorage_drops_put() {

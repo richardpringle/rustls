@@ -1,14 +1,3 @@
-use crate::crypto::{CryptoProvider, KeyProvider, SecureRandom};
-use crate::enums::SignatureScheme;
-use crate::rand::GetRandomFailed;
-use crate::sign::SigningKey;
-use crate::suites::SupportedCipherSuite;
-use crate::webpki::WebPkiSupportedAlgorithms;
-use crate::Error;
-
-use pki_types::PrivateKeyDer;
-use webpki::aws_lc_rs as webpki_algs;
-
 use alloc::sync::Arc;
 
 // aws-lc-rs has a -- roughly -- ring-compatible API, so we just reuse all that
@@ -16,6 +5,16 @@ use alloc::sync::Arc;
 // ring-compatible crate, and `super::ring_shim` to bridge the gaps where they are
 // small.
 pub(crate) use aws_lc_rs as ring_like;
+use pki_types::PrivateKeyDer;
+use webpki::aws_lc_rs as webpki_algs;
+
+use crate::crypto::{CryptoProvider, KeyProvider, SecureRandom};
+use crate::enums::SignatureScheme;
+use crate::rand::GetRandomFailed;
+use crate::sign::SigningKey;
+use crate::suites::SupportedCipherSuite;
+use crate::webpki::WebPkiSupportedAlgorithms;
+use crate::Error;
 
 /// Using software keys for authentication.
 #[path = "../ring/sign.rs"]
@@ -171,9 +170,7 @@ static SUPPORTED_SIG_ALGS: WebPkiSupportedAlgorithms = WebPkiSupportedAlgorithms
 ///
 /// [`ALL_KX_GROUPS`] is provided as an array of all of these values.
 pub mod kx_group {
-    pub use super::kx::SECP256R1;
-    pub use super::kx::SECP384R1;
-    pub use super::kx::X25519;
+    pub use super::kx::{SECP256R1, SECP384R1, X25519};
 }
 
 pub use kx::ALL_KX_GROUPS;

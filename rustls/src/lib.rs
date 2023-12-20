@@ -334,12 +334,12 @@ extern crate std;
 #[allow(unused_extern_crates)]
 extern crate test;
 
-#[cfg(doc)]
-use crate::crypto::CryptoProvider;
-
 // log for logging (optional).
 #[cfg(feature = "logging")]
 use log;
+
+#[cfg(doc)]
+use crate::crypto::CryptoProvider;
 
 #[cfg(not(feature = "logging"))]
 #[macro_use]
@@ -460,15 +460,14 @@ pub mod unbuffered {
 
 // Have a (non-public) "test provider" mod which supplies
 // tests that need part of a *ring*-compatible provider module.
-#[cfg(all(any(test, bench), not(feature = "ring"), feature = "aws_lc_rs"))]
-use crate::crypto::aws_lc_rs as test_provider;
-#[cfg(all(any(test, bench), feature = "ring"))]
-use crate::crypto::ring as test_provider;
-
 // The public interface is:
 pub use crate::builder::{ConfigBuilder, ConfigSide, WantsVerifier, WantsVersions};
 pub use crate::common_state::{CommonState, IoState, Side};
 pub use crate::conn::{Connection, ConnectionCommon, Reader, SideData, Writer};
+#[cfg(all(any(test, bench), not(feature = "ring"), feature = "aws_lc_rs"))]
+use crate::crypto::aws_lc_rs as test_provider;
+#[cfg(all(any(test, bench), feature = "ring"))]
+use crate::crypto::ring as test_provider;
 pub use crate::enums::{
     AlertDescription, CipherSuite, ContentType, HandshakeType, ProtocolVersion, SignatureAlgorithm,
     SignatureScheme,
@@ -516,13 +515,11 @@ pub mod client {
         pub use crate::verify::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
     }
 
+    pub use crate::msgs::persist::{Tls12ClientSessionValue, Tls13ClientSessionValue};
     pub use crate::webpki::{
         verify_server_cert_signed_by_trust_anchor, verify_server_name, ServerCertVerifierBuilder,
         VerifierBuilderError, WebPkiServerVerifier,
     };
-
-    pub use crate::msgs::persist::Tls12ClientSessionValue;
-    pub use crate::msgs::persist::Tls13ClientSessionValue;
 }
 
 pub use client::{ClientConfig, ClientConnection};
@@ -538,19 +535,18 @@ pub mod server {
     mod tls12;
     mod tls13;
 
+    pub use builder::WantsServerCert;
+    pub use handy::{NoServerSessionStorage, ResolvesServerCertUsingSni, ServerSessionMemoryCache};
+    pub use server_conn::{
+        Accepted, Acceptor, ClientHello, ProducesTickets, ReadEarlyData, ResolvesServerCert,
+        ServerConfig, ServerConnection, ServerConnectionData, StoresServerSessions,
+        UnbufferedServerConnection,
+    };
+
     pub use crate::verify::NoClientAuth;
     pub use crate::webpki::{
         ClientCertVerifierBuilder, ParsedCertificate, VerifierBuilderError, WebPkiClientVerifier,
     };
-    pub use builder::WantsServerCert;
-    pub use handy::ResolvesServerCertUsingSni;
-    pub use handy::{NoServerSessionStorage, ServerSessionMemoryCache};
-    pub use server_conn::StoresServerSessions;
-    pub use server_conn::{
-        Accepted, Acceptor, ReadEarlyData, ServerConfig, ServerConnection, ServerConnectionData,
-        UnbufferedServerConnection,
-    };
-    pub use server_conn::{ClientHello, ProducesTickets, ResolvesServerCert};
 
     /// Dangerous configuration that should be audited and used with extreme care.
     pub mod danger {

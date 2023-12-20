@@ -2,10 +2,11 @@
 //! so that unused cryptography in rustls can be discarded by the linker.  You can
 //! observe using `nm` that the binary of this program does not contain any AES code.
 
-use rustls::crypto::{ring, CryptoProvider};
 use std::io::{stdout, Read, Write};
 use std::net::TcpStream;
 use std::sync::Arc;
+
+use rustls::crypto::{ring, CryptoProvider};
 
 fn main() {
     let mut root_store = rustls::RootCertStore::empty();

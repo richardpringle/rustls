@@ -1,12 +1,11 @@
-use crate::crypto::CryptoProvider;
-use crate::error::Error;
-use crate::versions;
-
 use alloc::format;
 use core::fmt;
 use core::marker::PhantomData;
 use std::sync::Arc;
 
+use crate::crypto::CryptoProvider;
+use crate::error::Error;
+use crate::versions;
 #[cfg(doc)]
 use crate::{ClientConfig, ServerConfig};
 

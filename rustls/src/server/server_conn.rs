@@ -1,6 +1,20 @@
+use alloc::boxed::Box;
+use alloc::sync::Arc;
+use alloc::vec::Vec;
+use core::fmt;
+use core::fmt::{Debug, Formatter};
+use core::marker::PhantomData;
+use core::ops::{Deref, DerefMut};
+use std::io;
+
+use pki_types::DnsName;
+
+use super::hs;
 use crate::builder::ConfigBuilder;
 use crate::common_state::{CommonState, Context, Protocol, Side, State};
 use crate::conn::{ConnectionCommon, ConnectionCore, UnbufferedConnectionCommon};
+#[cfg(doc)]
+use crate::crypto;
 use crate::crypto::CryptoProvider;
 use crate::enums::{CipherSuite, ProtocolVersion, SignatureScheme};
 use crate::error::Error;
@@ -11,29 +25,11 @@ use crate::msgs::handshake::{ClientHelloPayload, ProtocolName, ServerExtension};
 use crate::msgs::message::Message;
 use crate::suites::ExtractedSecrets;
 use crate::vecbuf::ChunkVecBuffer;
-use crate::verify;
 #[cfg(feature = "ring")]
 use crate::versions;
-use crate::KeyLog;
 #[cfg(feature = "ring")]
 use crate::WantsVerifier;
-use crate::{sign, WantsVersions};
-
-use super::hs;
-
-use pki_types::DnsName;
-
-use alloc::boxed::Box;
-use alloc::sync::Arc;
-use alloc::vec::Vec;
-use core::fmt;
-use core::fmt::{Debug, Formatter};
-use core::marker::PhantomData;
-use core::ops::{Deref, DerefMut};
-use std::io;
-
-#[cfg(doc)]
-use crate::crypto;
+use crate::{sign, verify, KeyLog, WantsVersions};
 
 /// A trait for the ability to store server session data.
 ///

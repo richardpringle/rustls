@@ -1,5 +1,6 @@
-use crate::enums::ProtocolVersion;
-use crate::enums::{AlertDescription, ContentType, HandshakeType};
+use alloc::vec::Vec;
+
+use crate::enums::{AlertDescription, ContentType, HandshakeType, ProtocolVersion};
 use crate::error::{Error, InvalidMessage, PeerMisbehaved};
 use crate::internal::record_layer::RecordLayer;
 use crate::msgs::alert::AlertMessagePayload;
@@ -9,8 +10,6 @@ use crate::msgs::codec::{Codec, Reader};
 use crate::msgs::enums::AlertLevel;
 use crate::msgs::fragmenter::MAX_FRAGMENT_LEN;
 use crate::msgs::handshake::HandshakeMessagePayload;
-
-use alloc::vec::Vec;
 
 #[derive(Debug)]
 pub enum MessagePayload {

@@ -1,3 +1,15 @@
+use alloc::sync::Arc;
+use alloc::vec::Vec;
+use core::marker::PhantomData;
+use core::ops::{Deref, DerefMut};
+use core::{fmt, mem};
+use std::error::Error as StdError;
+use std::io;
+
+use pki_types::ServerName;
+
+use super::handy::{ClientSessionMemoryCache, NoClientSessionStorage};
+use super::hs;
 use crate::builder::ConfigBuilder;
 use crate::common_state::{CommonState, Protocol, Side};
 use crate::conn::{ConnectionCommon, ConnectionCore, UnbufferedConnectionCommon};
@@ -9,31 +21,13 @@ use crate::log::trace;
 use crate::msgs::enums::NamedGroup;
 use crate::msgs::handshake::ClientExtension;
 use crate::msgs::persist;
-use crate::sign;
 use crate::suites::{ExtractedSecrets, SupportedCipherSuite};
 use crate::unbuffered::{EncryptError, TransmitTlsData};
-use crate::versions;
-use crate::KeyLog;
 #[cfg(feature = "ring")]
 use crate::WantsVerifier;
-use crate::{verify, WantsVersions};
-
-use super::handy::{ClientSessionMemoryCache, NoClientSessionStorage};
-use super::hs;
-
-use pki_types::ServerName;
-
-use alloc::sync::Arc;
-use alloc::vec::Vec;
-use core::fmt;
-use core::marker::PhantomData;
-use core::mem;
-use core::ops::{Deref, DerefMut};
-use std::error::Error as StdError;
-use std::io;
-
 #[cfg(doc)]
 use crate::{crypto, DistinguishedName};
+use crate::{sign, verify, versions, KeyLog, WantsVersions};
 
 /// A trait for the ability to store client session data, so that sessions
 /// can be resumed in future connections.

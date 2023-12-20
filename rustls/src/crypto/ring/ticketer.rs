@@ -1,17 +1,16 @@
 #![allow(clippy::duplicate_mod)]
 
-use crate::error::Error;
-use crate::rand::GetRandomFailed;
-use crate::server::ProducesTickets;
-
-use super::ring_like::aead;
-use super::ring_like::rand::{SecureRandom, SystemRandom};
-
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::fmt;
 use core::fmt::{Debug, Formatter};
+
+use super::ring_like::aead;
+use super::ring_like::rand::{SecureRandom, SystemRandom};
+use crate::error::Error;
+use crate::rand::GetRandomFailed;
+use crate::server::ProducesTickets;
 
 /// A concrete, safe ticket creation mechanism.
 pub struct Ticketer {}
@@ -120,10 +119,11 @@ impl Debug for AeadTicketer {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     use core::time::Duration;
+
     use pki_types::UnixTime;
+
+    use super::*;
 
     #[test]
     fn basic_pairwise_test() {

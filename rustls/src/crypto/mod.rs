@@ -1,7 +1,3 @@
-use crate::sign::SigningKey;
-use crate::suites;
-use crate::{Error, NamedGroup};
-
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -10,6 +6,10 @@ use core::fmt::Debug;
 use pki_types::PrivateKeyDer;
 use zeroize::Zeroize;
 
+use crate::sign::SigningKey;
+pub use crate::webpki::{
+    verify_tls12_signature, verify_tls13_signature, WebPkiSupportedAlgorithms,
+};
 #[cfg(all(doc, feature = "tls12"))]
 use crate::Tls12CipherSuite;
 #[cfg(doc)]
@@ -17,10 +17,7 @@ use crate::{
     client, crypto, server, sign, ClientConfig, ConfigBuilder, ServerConfig, SupportedCipherSuite,
     Tls13CipherSuite,
 };
-
-pub use crate::webpki::{
-    verify_tls12_signature, verify_tls13_signature, WebPkiSupportedAlgorithms,
-};
+use crate::{suites, Error, NamedGroup};
 
 /// *ring* based CryptoProvider.
 #[cfg(feature = "ring")]
@@ -53,11 +50,9 @@ pub mod hpke;
 // avoid having two import paths to the same types.
 pub(crate) mod signer;
 
-pub use crate::rand::GetRandomFailed;
-
-pub use crate::suites::CipherSuiteCommon;
-
 pub use crate::msgs::handshake::KeyExchangeAlgorithm;
+pub use crate::rand::GetRandomFailed;
+pub use crate::suites::CipherSuiteCommon;
 
 /// Controls core cryptography used by rustls.
 ///

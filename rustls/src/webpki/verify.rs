@@ -7,7 +7,6 @@ use super::anchors::RootCertStore;
 use super::pki_error;
 use crate::enums::SignatureScheme;
 use crate::error::{Error, PeerMisbehaved};
-
 use crate::verify::{DigitallySignedStruct, HandshakeSignatureValid};
 
 /// Verify that the end-entity certificate `end_entity` is a valid server cert
